@@ -1,0 +1,22 @@
+{
+  "name": "nodex-dkz",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Dikazo Solutions Pvt Ltd",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.8",
+    "bcrypt": "^5.1.1",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "express": "^4.18.3",
+    "mongoose": "^8.2.2",
+    "multer": "^1.4.5-lts.1",
+    "pdf-puppeteer": "^1.1.11",
+    "razorpay": "^2.9.3"
+  }
+}
