@@ -132,7 +132,27 @@ customerRouter.post("/c1/login", async function (req, res) {
         phone: req.body.phone,
         rememberToken: otp,
         referralCode: "CUS" + makeid(6).toUpperCase(),
-      }).then(async function () {
+      }).then(async function (cc) {
+        const smsData = {
+          sender_id: "DKZINV",
+          message: "168960",
+          // "message":$text,
+          // "messege_id": 160043,
+          language: "english",
+          route: "dlt",
+          entity_id: "1201160714810173527",
+          numbers: req.body.phone, // comma separated numbers
+          variables_values: otp,
+        };
+        axios.post("https://www.fast2sms.com/dev/bulkV2", smsData, {
+          headers: {
+            accept: "*/*",
+            "cache-control": "no-cache",
+            "content-type": "application/json",
+            authorization:
+              "f9htlY0aujVGR6MQ2x5PzkNo3dTJbCqDBEp4XgiIWU7vncr1eA6jC3i01KZkqM7tETz9wrYoIh2aQdpm",
+          },
+        });
         res.send({
           status: true,
           message: "OTP send to mobile number",
@@ -226,10 +246,22 @@ customerRouter.post("/c1/confirm-order", async (req, res) => {
               goldType: "buy",
             };
             await InvestmentModel.create(invest).then(async (inv) => {
-              res.send({
-                status: true,
-                type: "success",
-                message: "Transaction created successfully",
+              await CustomerModel.findOneAndUpdate(
+                { rememberToken: req.body.token },
+                {
+                  $inc: {
+                    currentGoldInGrams: req.body.goldgrams,
+                    currentGoldInAmount:
+                      req.body.amount -
+                      ((req.body.amount / 100) * 3).toFixed(2),
+                  },
+                }
+              ).then((rr) => {
+                res.send({
+                  status: true,
+                  type: "success",
+                  message: "Transaction created successfully",
+                });
               });
             });
           });
@@ -245,6 +277,8 @@ customerRouter.get("/c1/list-investment", async (req, res) => {
       if (detail !== null) {
         await InvestmentModel.find({ customerId: detail._id })
           .populate({ path: "transRefId" })
+          .sort({ created_at: -1 })
+          .exec()
           .then(async (list) => {
             const goldPriceData = await refereshGoldSellPrice();
             const currentPricePerGram = goldPriceData.goldPrice;
@@ -259,6 +293,7 @@ customerRouter.get("/c1/list-investment", async (req, res) => {
               const dd = list[i];
 
               const data = {
+                goldType: dd.goldType,
                 amount: dd.investmentAmount,
                 grams: dd.investmentGrams,
                 created: dd.created_at,
@@ -500,13 +535,25 @@ customerRouter.post("/c1/sell-gold", async (req, res) => {
                   currentGoldInGrams: grams,
                   currentGoldInAmount: amount,
                 },
+                $inc: { walletBalance: amount },
               }
             ).then(async () => {
               await TransactionModel.create(transSchema).then(async (trans) => {
-                res.send({
-                  status: true,
-                  type: "success",
-                  message: "Gold sold successfully",
+                const invest = {
+                  investmentId: makeid(10),
+                  transRefId: trans._id,
+                  customerId: detail._id,
+                  investmentGrams: req.body.grams,
+                  investmentAmount: req.body.amount,
+                  goldPrice: req.body.goldPrice,
+                  goldType: "sell",
+                };
+                await InvestmentModel.create(invest).then(async (inv) => {
+                  res.send({
+                    status: true,
+                    type: "success",
+                    message: "Gold sold successfully",
+                  });
                 });
               });
             });
@@ -515,6 +562,169 @@ customerRouter.post("/c1/sell-gold", async (req, res) => {
       }
     }
   );
+});
+
+customerRouter.get("/c1/get-sell-invoice", async function (req, res) {
+  // launch a new chrome instance
+  const browser = await puppeteer.launch({
+    headless: true,
+  });
+
+  InvestmentModel.findOne({ _id: req.query.id })
+    .populate({ path: "customerId" })
+    .populate({ path: "transRefId" })
+    .then(async (invoice) => {
+      //   console.log(req);
+      if (invoice !== null) {
+        // create a new page
+        const page = await browser.newPage();
+
+        // set your html as the pages content
+        const html = `
+
+  <div style="margin:10%;font-family: 'Roboto', Arial, sans-serif;">
+          <div style="display: flex; justify-content: space-between; padding-top: 0.75rem;padding-bottom: 0.75rem;">
+            <div>TAX INVOICE</div>
+            <div>Original - Customer Copy</div>
+          </div>
+          <div style="padding-top: 0.75rem;padding-bottom: 0.75rem; color: #6366f1;">
+            Dikazo Solutions Private Limited
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: .75rem;line-height: 1rem;">
+            <div>
+              D No 1, 98/9/3/23, Image Gardens Rd,
+              above Axis bank
+            </div>
+            <div>PAN No : AAGCJ2412E</div>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: .75rem;line-height: 1rem;">
+            <div>Madhapur,</div>
+            <div>GSTIN : 29AAGCJ2412E1ZV</div>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: .75rem;line-height: 1rem;">
+            <div>Telangana 500081</div>
+            <div>CIN No : U47733KA2023PTC181719</div>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding-top: 0.75rem;padding-bottom: 0.75rem; margin-top: 1.5rem;margin-bottom: 1.5rem; border-bottom: 1px solid; border-bottom-color: #e2e2e2; border-top: 1px solid; border-top-color: #e2e2e2;">
+            <div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #6366f1;">Order No</div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #000000">${
+                invoice.transRefId.txnId + invoice.transRefId.txnNo
+              }</div>
+            </div>
+            <div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #6366f1;">Date</div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #000000">${formatDate(
+                invoice.created_at
+              )}</div>
+            </div>
+            <div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #6366f1;">Customer ID</div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #000000">${
+                invoice.customerId._id
+              }</div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 0.875rem; line-height: 1.25rem; color: #6366f1;">Bill to</div>
+            <div style="font-size: 0.875rem; line-height: 1.25rem; color: #000000">Name : </div>
+            <div style="font-size: 0.875rem; line-height: 1.25rem; color: #000000">Phone Number : +91${
+              invoice.customerId.phone
+            }</div>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding-top: 0.75rem;padding-bottom: 0.75rem; margin-top: 1.5rem;margin-bottom: 1.5rem; border-bottom: 1px solid; border-bottom-color: #e2e2e2;">
+            <div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #6366f1;">Description</div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #000000">
+                Gold 24 Carat
+                <br />
+                HSN Code : 71081300
+              </div>
+            </div>
+            <div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #6366f1;">Grams*</div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #000000">${
+                invoice.investmentGrams
+              }</div>
+            </div>
+            <div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #6366f1;">Rate Per Gram</div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #000000">₹ ${
+                invoice.goldPrice
+              }</div>
+            </div>
+            <div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #6366f1;">Total Amount</div>
+              <div style="font-size: 0.875rem; line-height: 1.25rem; color: #000000">₹ ${
+                invoice.investmentAmount
+              }</div>
+            </div>
+          </div>
+          <div style="width: 100%; display: flex;">
+            <div style="width: 50%"></div>
+            <div style="width: 50%">
+              <div style="padding-top: 0rem;padding-bottom: 1.25rem; border-bottom: 1px solid; border-bottom-color: #e2e2e2;>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div style="font-size: 1.25rem;line-height: 1.75rem; color: #6366f1;">
+                      Total Invoice Value
+                    </div>
+                  <div>₹ ${invoice.transRefId.amount}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="margin: 0 10%;padding-top: 0.75rem;padding-bottom: 0.75rem;">
+            <b>Declaration</b>
+            <div>
+              We declare that the above quantity of goods are kept by the seller
+              in a safe vault on behalf of the buyer. It can be delivered in
+              minted product as per the Terms & Conditions.
+            </div>
+          </div>
+          <div style="margin: 0 10%;padding-top: 0.75rem;padding-bottom: 0.75rem;">
+            <b>Declaration</b>
+            <div>
+              The gold grams you own are calculated by dividing the amount paid
+              net of GST by the gold rate and rounded down to 4 decimal places.
+              For example, .00054 grams will be rounded down to .0005 grams.
+            </div>
+          </div>
+          <div style="margin: 0 10%;padding-top: 0.75rem;padding-bottom: 0.75rem;">
+            <div>(E & O.E.)</div>
+            <div>(Subject to Realization)</div>
+          </div>
+          <div style="margin: 0 10%;display: flex; justify-content: flex-end; text-align: center;">
+            <div>
+              For Dikazo Solutions Private Limited
+              <br />
+              (Authorized Signatory)
+            </div>
+          </div>
+        </div>`;
+        await page.setContent(html, {
+          waitUntil: "domcontentloaded",
+        });
+
+        // create a pdf buffer
+        const pdfBuffer = await page.pdf({
+          format: "A4",
+        });
+
+        // or a .pdf file
+        await page.pdf({
+          format: "A4",
+          path: `public/invoice/${invoice.transRefId.txnId}.pdf`,
+        });
+
+        // close the browser
+        await browser.close();
+        res.send({
+          status: true,
+          type: "success",
+          data: `${invoice.transRefId.txnId}.pdf`,
+        });
+      }
+    });
 });
 
 customerRouter.post("/c1/get-profile/:token", function (req, res) {
